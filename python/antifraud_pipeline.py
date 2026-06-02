@@ -231,6 +231,10 @@ def run_pipeline(input_path: str, output_path: str) -> None:
 
     df_eda = df.copy()
     df_eda["Hour"] = (df_eda["Time"] // 3600) % 24
+
+    # Абсолютное распределение по часам.
+    # Оно показывает общее количество операций, но из-за дисбаланса классов
+    # мошеннические операции могут быть визуально почти незаметны.
     plt.figure(figsize=(8, 5))
     plt.hist(df_eda[df_eda["Class"] == 0]["Hour"], bins=24, alpha=0.7, label="Обычные")
     plt.hist(df_eda[df_eda["Class"] == 1]["Hour"], bins=24, alpha=0.7, label="Мошеннические")
@@ -240,6 +244,38 @@ def run_pipeline(input_path: str, output_path: str) -> None:
     plt.legend()
     plt.tight_layout()
     plt.savefig(paths["plots"] / "06_time_distribution_by_hour.png", dpi=150)
+    plt.close()
+
+    # Нормализованное распределение по часам.
+    # Для каждого класса сумма значений по 24 часам равна 100%.
+    # Это позволяет сравнивать форму распределения обычных и мошеннических операций,
+    # а не абсолютные количества, которые сильно различаются из-за дисбаланса.
+    hour_class_counts = (
+        df_eda.groupby(["Hour", "Class"])
+        .size()
+        .unstack(fill_value=0)
+        .reindex(range(24), fill_value=0)
+    )
+    for class_value in [0, 1]:
+        if class_value not in hour_class_counts.columns:
+            hour_class_counts[class_value] = 0
+    hour_class_counts = hour_class_counts[[0, 1]]
+    hour_class_percent = hour_class_counts.div(hour_class_counts.sum(axis=0), axis=1).fillna(0) * 100
+    hour_class_percent.columns = ["Обычные операции, %", "Мошеннические операции, %"]
+    hour_class_percent.index.name = "Hour"
+    hour_class_percent.to_csv(paths["tables"] / "hour_distribution_normalized.csv", encoding="utf-8-sig")
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(hour_class_percent.index, hour_class_percent["Обычные операции, %"], marker="o", label="Обычные операции")
+    plt.plot(hour_class_percent.index, hour_class_percent["Мошеннические операции, %"], marker="o", label="Мошеннические операции")
+    plt.title("Нормализованное распределение операций по часам")
+    plt.xlabel("Час")
+    plt.ylabel("Доля операций внутри класса, %")
+    plt.xticks(range(24))
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(paths["plots"] / "06b_time_distribution_normalized.png", dpi=150)
     plt.close()
 
     plt.figure(figsize=(12, 10))
@@ -421,8 +457,10 @@ def run_pipeline(input_path: str, output_path: str) -> None:
 5. Amount и логарифмическая нормализация
 Сумма операции сама по себе не позволяет надежно отделить мошенничество от обычных операций. Мошеннические операции могут встречаться как среди маленьких, так и среди крупных сумм. Для Amount выполнено преобразование Amount_Log = log(1 + Amount). Оно уменьшает влияние очень крупных операций и делает распределение более удобным для обучения моделей.
 
-6. Time
-Признак Time помогает проверить, есть ли временные закономерности. Если подозрительные операции чаще встречаются в определенные часы, модель может использовать эту информацию.
+6. Time и нормализация распределения по часам
+Признак Time помогает проверить, есть ли временные закономерности. Сначала построено абсолютное распределение операций по часам. Затем построено нормализованное распределение: для каждого класса сумма долей по 24 часам равна 100%.
+
+Это важно, потому что обычных операций намного больше, чем мошеннических. Нормализация позволяет сравнивать не количество операций, а форму распределения: в какие часы внутри каждого класса операции встречаются чаще или реже. Если линия мошеннических операций заметно отличается от линии обычных, значит время может быть полезным признаком для модели.
 
 7. Матрица корреляций
 Построена полная матрица корреляций между числовыми признаками. Она показывает, насколько признаки линейно связаны друг с другом. Для признаков после PCA обычно ожидается сниженная взаимная корреляция, что полезно для моделей.
@@ -504,7 +542,8 @@ Random Forest позволяет оценить, какие признаки ч�
 2. проведен EDA;
 3. выполнена очистка данных;
 4. выполнена логарифмическая нормализация Amount;
-5. выполнено масштабирование Time и Amount_Log;
+5. построено нормализованное распределение операций по часам;
+6. выполнено масштабирование Time и Amount_Log;
 6. обучены Logistic Regression, Decision Tree и Random Forest;
 7. модели сравнены по Precision, Recall, F1-score и ROC-AUC;
 8. сохранены графики, таблицы и предсказания.

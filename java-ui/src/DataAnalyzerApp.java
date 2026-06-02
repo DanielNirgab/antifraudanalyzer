@@ -27,6 +27,7 @@ public class DataAnalyzerApp extends JFrame {
     private JLabel lblHistograms;
     private JLabel lblCorrelationMatrix;
     private JLabel lblLogNormalization;
+    private JLabel lblHourNormalization;
     private JComboBox<String> cmbGraphs;
 
     private File selectedCsvFile;
@@ -103,6 +104,9 @@ public class DataAnalyzerApp extends JFrame {
 
         lblLogNormalization = createImageLabel("График логарифмической нормализации Amount появится после анализа");
         tabs.addTab("Лог-нормализация", new JScrollPane(lblLogNormalization));
+
+        lblHourNormalization = createImageLabel("Нормализованное распределение операций по часам появится после анализа");
+        tabs.addTab("Часы, нормализация", new JScrollPane(lblHourNormalization));
 
         lblCorrelationMatrix = createImageLabel("Матрица корреляций появится после анализа");
         tabs.addTab("Корреляции", new JScrollPane(lblCorrelationMatrix));
@@ -268,6 +272,7 @@ public class DataAnalyzerApp extends JFrame {
 
         showImageInLabel(lblHistograms, new File(outputDir, "plots/02_all_numeric_histograms.png"), 1000, 620);
         showImageInLabel(lblLogNormalization, new File(outputDir, "plots/04_amount_log_normalization.png"), 1000, 620);
+        showImageInLabel(lblHourNormalization, new File(outputDir, "plots/06b_time_distribution_normalized.png"), 1000, 620);
         showImageInLabel(lblCorrelationMatrix, new File(outputDir, "plots/07_full_correlation_heatmap.png"), 1000, 620);
 
         loadCsvToTable(new File(outputDir, "tables/model_comparison.csv"), tblModels, 200);
@@ -289,6 +294,7 @@ public class DataAnalyzerApp extends JFrame {
         lblGraph.setText("Графики появятся после анализа");
         if (lblHistograms != null) { lblHistograms.setIcon(null); lblHistograms.setText("Гистограммы всех числовых признаков появятся после анализа"); }
         if (lblLogNormalization != null) { lblLogNormalization.setIcon(null); lblLogNormalization.setText("График логарифмической нормализации Amount появится после анализа"); }
+        if (lblHourNormalization != null) { lblHourNormalization.setIcon(null); lblHourNormalization.setText("Нормализованное распределение операций по часам появится после анализа"); }
         if (lblCorrelationMatrix != null) { lblCorrelationMatrix.setIcon(null); lblCorrelationMatrix.setText("Матрица корреляций появится после анализа"); }
     }
 
