@@ -24,6 +24,9 @@ public class DataAnalyzerApp extends JFrame {
     private JTable tblModels;
     private JTable tblPredictions;
     private JLabel lblGraph;
+    private JLabel lblHistograms;
+    private JLabel lblCorrelationMatrix;
+    private JLabel lblLogNormalization;
     private JComboBox<String> cmbGraphs;
 
     private File selectedCsvFile;
@@ -95,6 +98,15 @@ public class DataAnalyzerApp extends JFrame {
         tabs.addTab("Подготовка", new JScrollPane(txtPreprocessing));
         tabs.addTab("Модели", new JScrollPane(txtModels));
 
+        lblHistograms = createImageLabel("Гистограммы всех числовых признаков появятся после анализа");
+        tabs.addTab("Распределения", new JScrollPane(lblHistograms));
+
+        lblLogNormalization = createImageLabel("График логарифмической нормализации Amount появится после анализа");
+        tabs.addTab("Лог-нормализация", new JScrollPane(lblLogNormalization));
+
+        lblCorrelationMatrix = createImageLabel("Матрица корреляций появится после анализа");
+        tabs.addTab("Корреляции", new JScrollPane(lblCorrelationMatrix));
+
         tblModels = new JTable();
         tabs.addTab("Сравнение моделей", new JScrollPane(tblModels));
 
@@ -129,6 +141,12 @@ public class DataAnalyzerApp extends JFrame {
         area.setFont(new Font("Segoe UI", Font.PLAIN, 15));
         area.setText("Результаты появятся после запуска анализа.");
         return area;
+    }
+
+    private JLabel createImageLabel(String text) {
+        JLabel label = new JLabel(text, SwingConstants.CENTER);
+        label.setBorder(BorderFactory.createEtchedBorder());
+        return label;
     }
 
     private String getCurrentPythonPath() {
@@ -248,6 +266,10 @@ public class DataAnalyzerApp extends JFrame {
         txtFeatures.setText(readText(new File(outputDir, "texts/05_feature_importance.txt")));
         txtFinal.setText(readText(new File(outputDir, "texts/06_final_conclusion.txt")));
 
+        showImageInLabel(lblHistograms, new File(outputDir, "plots/02_all_numeric_histograms.png"), 1000, 620);
+        showImageInLabel(lblLogNormalization, new File(outputDir, "plots/04_amount_log_normalization.png"), 1000, 620);
+        showImageInLabel(lblCorrelationMatrix, new File(outputDir, "plots/07_full_correlation_heatmap.png"), 1000, 620);
+
         loadCsvToTable(new File(outputDir, "tables/model_comparison.csv"), tblModels, 200);
         loadCsvToTable(new File(outputDir, "tables/fraud_predictions.csv"), tblPredictions, 100);
         loadGraphs();
@@ -265,6 +287,9 @@ public class DataAnalyzerApp extends JFrame {
         cmbGraphs.removeAllItems();
         lblGraph.setIcon(null);
         lblGraph.setText("Графики появятся после анализа");
+        if (lblHistograms != null) { lblHistograms.setIcon(null); lblHistograms.setText("Гистограммы всех числовых признаков появятся после анализа"); }
+        if (lblLogNormalization != null) { lblLogNormalization.setIcon(null); lblLogNormalization.setText("График логарифмической нормализации Amount появится после анализа"); }
+        if (lblCorrelationMatrix != null) { lblCorrelationMatrix.setIcon(null); lblCorrelationMatrix.setText("Матрица корреляций появится после анализа"); }
     }
 
     private File findPythonScript() {
@@ -328,6 +353,7 @@ public class DataAnalyzerApp extends JFrame {
             lblGraph.setText("Графики не найдены.");
             return;
         }
+        java.util.Arrays.sort(files, (a, b) -> a.getName().compareToIgnoreCase(b.getName()));
         for (File f : files) cmbGraphs.addItem(f.getName());
         if (cmbGraphs.getItemCount() > 0) cmbGraphs.setSelectedIndex(0);
         showSelectedGraph();
@@ -341,16 +367,23 @@ public class DataAnalyzerApp extends JFrame {
             lblGraph.setText("Файл графика не найден: " + imageFile.getAbsolutePath());
             return;
         }
+        showImageInLabel(lblGraph, imageFile, 950, 560);
+    }
+
+    private void showImageInLabel(JLabel label, File imageFile, int maxW, int maxH) {
+        if (!imageFile.exists()) {
+            label.setIcon(null);
+            label.setText("Файл графика не найден: " + imageFile.getAbsolutePath());
+            return;
+        }
         ImageIcon icon = new ImageIcon(imageFile.getAbsolutePath());
-        int maxW = 950;
-        int maxH = 560;
         int w = icon.getIconWidth();
         int h = icon.getIconHeight();
         double scale = Math.min((double) maxW / Math.max(w, 1), (double) maxH / Math.max(h, 1));
         if (scale > 1.0) scale = 1.0;
         Image scaled = icon.getImage().getScaledInstance((int) (w * scale), (int) (h * scale), Image.SCALE_SMOOTH);
-        lblGraph.setIcon(new ImageIcon(scaled));
-        lblGraph.setText("");
+        label.setIcon(new ImageIcon(scaled));
+        label.setText("");
     }
 
     private void openOutputFolder() {

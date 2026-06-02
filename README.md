@@ -1,43 +1,53 @@
-# Учебный интерфейс антифрод-анализа
+# Учебный проект: определение мошеннических банковских операций
 
 Проект состоит из двух частей:
 
-- `python/antifraud_pipeline.py` — Python-скрипт анализа датасета Credit Card Fraud Detection;
-- `java-ui/src/DataAnalyzerApp.java` — простой Java Swing-интерфейс с вкладками для просмотра результатов.
+1. `python/antifraud_pipeline.py` — Python-скрипт анализа данных, обучения моделей и сохранения результатов.
+2. `java-ui/src/DataAnalyzerApp.java` — простой Java Swing-интерфейс для выбора CSV-файла, запуска Python-скрипта и просмотра результатов по вкладкам.
 
-## Установка Python-зависимостей
+## Что делает Python-скрипт
+
+- загружает выбранный CSV-файл Credit Card Fraud Detection;
+- проверяет наличие обязательных столбцов `Time`, `Amount`, `Class`;
+- выполняет EDA;
+- строит гистограммы всех числовых признаков;
+- строит матрицу корреляций;
+- выполняет логарифмическую нормализацию `Amount` через `Amount_Log = log(1 + Amount)`;
+- обучает модели Logistic Regression, Decision Tree и Random Forest;
+- сравнивает модели по Accuracy, Precision, Recall, F1-score и ROC-AUC;
+- сохраняет таблицы, графики, предсказания и человекочитаемые пояснения.
+
+## Установка зависимостей
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Запуск Java-интерфейса
+## Запуск Python отдельно
 
-Из корня проекта:
+```bash
+python python/antifraud_pipeline.py --input path/to/creditcard.csv --output output
+```
+
+## Запуск Java-интерфейса
 
 ```bash
 javac java-ui/src/DataAnalyzerApp.java
 java -cp java-ui/src DataAnalyzerApp
 ```
 
-Далее:
+В интерфейсе:
 
-1. нажмите «Проверить Python»;
-2. нажмите «Выбрать CSV датасет» и выберите `creditcard.csv`;
+1. проверьте Python;
+2. выберите CSV-файл датасета;
 3. нажмите «Запустить полный анализ»;
-4. смотрите результаты во вкладках.
+4. просмотрите результаты во вкладках.
 
-## Что создает Python-скрипт
+## Основные результаты
 
-В папке `output` появятся:
+После запуска результаты сохраняются в папку `output`:
 
-- `texts/*.txt` — человекочитаемые объяснения результатов;
-- `tables/*.csv` — таблицы распределения классов, сравнения моделей, предсказания;
-- `plots/*.png` — графики EDA, матрицы ошибок, ROC/PR-кривые, важность признаков;
-- `human_readable_report.txt` — общий текстовый отчет.
-
-## Отдельный запуск Python
-
-```bash
-python python/antifraud_pipeline.py --input path/to/creditcard.csv --output output
-```
+- `output/texts/` — текстовые пояснения для интерфейса;
+- `output/tables/` — CSV-таблицы;
+- `output/plots/` — графики;
+- `output/human_readable_report.txt` — общий текстовый отчет.

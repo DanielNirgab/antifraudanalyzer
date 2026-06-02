@@ -4,10 +4,11 @@
 1. загружен датасет Credit Card Fraud Detection;
 2. проведен EDA;
 3. выполнена очистка данных;
-4. выполнено масштабирование Time и Amount;
-5. обучены Logistic Regression, Decision Tree и Random Forest;
-6. модели сравнены по Precision, Recall, F1-score и ROC-AUC;
-7. сохранены графики, таблицы и предсказания.
+4. выполнена логарифмическая нормализация Amount;
+5. выполнено масштабирование Time и Amount_Log;
+6. обучены Logistic Regression, Decision Tree и Random Forest;
+7. модели сравнены по Precision, Recall, F1-score и ROC-AUC;
+8. сохранены графики, таблицы и предсказания.
 
 Главная особенность данных — сильный дисбаланс классов: мошеннических операций всего 0.1727%.
 Из-за этого Accuracy не является главной метрикой. Основной акцент нужно делать на Recall, Precision, F1-score и Precision-Recall-кривой.
