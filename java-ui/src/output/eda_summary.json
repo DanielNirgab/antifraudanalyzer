@@ -1,0 +1,11 @@
+{
+    "rows": 284807,
+    "columns": 31,
+    "missing_values_total": 0,
+    "normal_operations": 284315,
+    "fraud_operations": 492,
+    "fraud_percent": 0.1727485630620034,
+    "amount_mean": 88.34961925093134,
+    "amount_median": 22.0,
+    "amount_max": 25691.16
+}
