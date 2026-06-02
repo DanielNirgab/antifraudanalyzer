@@ -1,0 +1,18 @@
+{
+  "input_file": "C:\\Users\\bgrln\\OneDrive\\Рабочий стол\\Учебное\\Датасет\\creditcard.csv",
+  "rows_original": 284807,
+  "columns_original": 31,
+  "rows_after_cleaning": 284807,
+  "columns_after_cleaning": 32,
+  "missing_before": 0,
+  "missing_after": 0,
+  "normal_count": 284315,
+  "fraud_count": 492,
+  "fraud_share": 0.001727485630620034,
+  "train_rows": 227845,
+  "test_rows": 56962,
+  "best_model": "Logistic Regression",
+  "output_base_dir": "C:\\Users\\bgrln\\OneDrive\\Рабочий стол\\Учебное\\Датасет\\antifraud_java_interface\\output",
+  "run_dir": "C:\\Users\\bgrln\\OneDrive\\Рабочий стол\\Учебное\\Датасет\\antifraud_java_interface\\output\\runs\\run_20260602_212509",
+  "plots_dir": "C:\\Users\\bgrln\\OneDrive\\Рабочий стол\\Учебное\\Датасет\\antifraud_java_interface\\output\\runs\\run_20260602_212509\\plots"
+}

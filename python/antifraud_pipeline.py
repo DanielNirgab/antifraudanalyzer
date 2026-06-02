@@ -48,15 +48,45 @@ RANDOM_STATE = 42
 
 # ----------------------------- Вспомогательные функции -----------------------------
 
-def ensure_dirs(output_dir: Path) -> dict:
+def create_run_dirs(output_dir: Path) -> dict:
+    """
+    Создает отдельную папку для каждого запуска анализа.
+
+    Структура результата:
+        output/
+          runs/
+            run_YYYYMMDD_HHMMSS/
+              plots/
+              tables/
+              texts/
+
+    Такой подход нужен, чтобы результаты разных запусков не перемешивались,
+    а Java-интерфейс мог показать все графики именно текущего запуска.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = output_dir / "runs" / f"run_{timestamp}"
+
+    # Если пользователь запустил анализ несколько раз в одну секунду,
+    # добавим короткий индекс, чтобы не перезаписать предыдущий запуск.
+    if run_dir.exists():
+        i = 2
+        while (output_dir / "runs" / f"run_{timestamp}_{i}").exists():
+            i += 1
+        run_dir = output_dir / "runs" / f"run_{timestamp}_{i}"
+
     paths = {
-        "root": output_dir,
-        "plots": output_dir / "plots",
-        "tables": output_dir / "tables",
-        "texts": output_dir / "texts",
+        "output_base": output_dir,
+        "runs": output_dir / "runs",
+        "root": run_dir,
+        "plots": run_dir / "plots",
+        "tables": run_dir / "tables",
+        "texts": run_dir / "texts",
     }
-    for p in paths.values():
-        p.mkdir(parents=True, exist_ok=True)
+    for path in paths.values():
+        path.mkdir(parents=True, exist_ok=True)
+
+    # Файл-указатель на последний запуск. Его читает Java-интерфейс.
+    (output_dir / "latest_run.txt").write_text(str(run_dir.resolve()), encoding="utf-8")
     return paths
 
 
@@ -134,14 +164,16 @@ def choose_best_model(results: pd.DataFrame) -> str:
 def run_pipeline(input_path: str, output_path: str) -> None:
     input_file = Path(input_path)
     output_dir = Path(output_path)
-    paths = ensure_dirs(output_dir)
+    paths = create_run_dirs(output_dir)
 
     if not input_file.exists():
         raise FileNotFoundError(f"Файл не найден: {input_file}")
 
     print("=== Учебный антифрод-анализ ===", flush=True)
     print(f"Входной файл: {input_file}", flush=True)
-    print(f"Папка результатов: {output_dir.resolve()}", flush=True)
+    print(f"Базовая папка результатов: {output_dir.resolve()}", flush=True)
+    print(f"Папка текущего запуска: {paths['root'].resolve()}", flush=True)
+    print(f"RUN_DIR={paths['root'].resolve()}", flush=True)
 
     # 1. Загрузка и проверка
     df = pd.read_csv(input_file)
@@ -576,7 +608,9 @@ Random Forest позволяет оценить, какие признаки ч�
         "train_rows": int(X_train.shape[0]),
         "test_rows": int(X_test.shape[0]),
         "best_model": best_model_name,
-        "output_dir": str(output_dir.resolve()),
+        "output_base_dir": str(output_dir.resolve()),
+        "run_dir": str(paths["root"].resolve()),
+        "plots_dir": str(paths["plots"].resolve()),
     }
     save_json(paths["root"] / "summary.json", summary)
 
@@ -584,7 +618,8 @@ Random Forest позволяет оценить, какие признаки ч�
     print(f"Лучшая модель: {best_model_name}", flush=True)
     print(f"Отчет: {paths['root'] / 'human_readable_report.txt'}", flush=True)
     print(f"Таблица сравнения моделей: {paths['tables'] / 'model_comparison.csv'}", flush=True)
-    print(f"Графики: {paths['plots']}", flush=True)
+    print(f"Папка текущего запуска: {paths['root']}", flush=True)
+    print(f"Графики текущего запуска: {paths['plots']}", flush=True)
 
 
 if __name__ == "__main__":
