@@ -22,6 +22,7 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -47,15 +48,45 @@ RANDOM_STATE = 42
 
 # ----------------------------- Вспомогательные функции -----------------------------
 
-def ensure_dirs(output_dir: Path) -> dict:
+def create_run_dirs(output_dir: Path) -> dict:
+    """
+    Создает отдельную папку для каждого запуска анализа.
+
+    Структура результата:
+        output/
+          runs/
+            run_YYYYMMDD_HHMMSS/
+              plots/
+              tables/
+              texts/
+
+    Такой подход нужен, чтобы результаты разных запусков не перемешивались,
+    а Java-интерфейс мог показать все графики именно текущего запуска.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = output_dir / "runs" / f"run_{timestamp}"
+
+    # Если пользователь запустил анализ несколько раз в одну секунду,
+    # добавим короткий индекс, чтобы не перезаписать предыдущий запуск.
+    if run_dir.exists():
+        i = 2
+        while (output_dir / "runs" / f"run_{timestamp}_{i}").exists():
+            i += 1
+        run_dir = output_dir / "runs" / f"run_{timestamp}_{i}"
+
     paths = {
-        "root": output_dir,
-        "plots": output_dir / "plots",
-        "tables": output_dir / "tables",
-        "texts": output_dir / "texts",
+        "output_base": output_dir,
+        "runs": output_dir / "runs",
+        "root": run_dir,
+        "plots": run_dir / "plots",
+        "tables": run_dir / "tables",
+        "texts": run_dir / "texts",
     }
-    for p in paths.values():
-        p.mkdir(parents=True, exist_ok=True)
+    for path in paths.values():
+        path.mkdir(parents=True, exist_ok=True)
+
+    # Файл-указатель на последний запуск. Его читает Java-интерфейс.
+    (output_dir / "latest_run.txt").write_text(str(run_dir.resolve()), encoding="utf-8")
     return paths
 
 
@@ -133,14 +164,16 @@ def choose_best_model(results: pd.DataFrame) -> str:
 def run_pipeline(input_path: str, output_path: str) -> None:
     input_file = Path(input_path)
     output_dir = Path(output_path)
-    paths = ensure_dirs(output_dir)
+    paths = create_run_dirs(output_dir)
 
     if not input_file.exists():
         raise FileNotFoundError(f"Файл не найден: {input_file}")
 
     print("=== Учебный антифрод-анализ ===", flush=True)
     print(f"Входной файл: {input_file}", flush=True)
-    print(f"Папка результатов: {output_dir.resolve()}", flush=True)
+    print(f"Базовая папка результатов: {output_dir.resolve()}", flush=True)
+    print(f"Папка текущего запуска: {paths['root'].resolve()}", flush=True)
+    print(f"RUN_DIR={paths['root'].resolve()}", flush=True)
 
     # 1. Загрузка и проверка
     df = pd.read_csv(input_file)
@@ -165,10 +198,17 @@ def run_pipeline(input_path: str, output_path: str) -> None:
     })
     class_distribution.to_csv(paths["tables"] / "class_distribution.csv", index=False, encoding="utf-8-sig")
 
+    # Логарифмическая нормализация Amount: уменьшаем влияние очень крупных операций.
+    # log1p безопасен для нулевых сумм: log1p(0) = 0.
+    df["Amount_Log"] = np.log1p(df["Amount"])
+
     df.describe().T.to_csv(paths["tables"] / "numeric_description.csv", encoding="utf-8-sig")
     df.groupby("Class")["Amount"].describe().to_csv(paths["tables"] / "amount_by_class.csv", encoding="utf-8-sig")
 
-    corr = df.corr(numeric_only=True)["Class"].sort_values(ascending=False)
+    corr_matrix = df.corr(numeric_only=True)
+    corr_matrix.to_csv(paths["tables"] / "correlation_matrix.csv", encoding="utf-8-sig")
+
+    corr = corr_matrix["Class"].sort_values(ascending=False)
     corr.to_frame("Correlation_with_Class").to_csv(paths["tables"] / "correlation_with_class.csv", encoding="utf-8-sig")
 
     # Графики EDA
@@ -181,14 +221,35 @@ def run_pipeline(input_path: str, output_path: str) -> None:
     plt.savefig(paths["plots"] / "01_class_distribution.png", dpi=150)
     plt.close()
 
+    # Гистограммы всех числовых признаков
+    num_cols = df.select_dtypes(include=np.number).columns
+    df[num_cols].hist(figsize=(16, 12), bins=30)
+    plt.suptitle("Распределение числовых признаков", fontsize=16)
+    plt.tight_layout()
+    plt.savefig(paths["plots"] / "02_all_numeric_histograms.png", dpi=150)
+    plt.close("all")
+
     plt.figure(figsize=(8, 5))
     plt.hist(df["Amount"], bins=60)
-    plt.title("Распределение суммы операций")
+    plt.title("Распределение суммы операций до логарифмирования")
     plt.xlabel("Amount")
     plt.ylabel("Количество операций")
     plt.tight_layout()
-    plt.savefig(paths["plots"] / "02_amount_distribution.png", dpi=150)
+    plt.savefig(paths["plots"] / "03_amount_distribution_raw.png", dpi=150)
     plt.close()
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+    axes[0].hist(df["Amount"], bins=60)
+    axes[0].set_title("Amount до логарифмирования")
+    axes[0].set_xlabel("Amount")
+    axes[0].set_ylabel("Количество")
+    axes[1].hist(df["Amount_Log"], bins=60)
+    axes[1].set_title("Amount после log1p")
+    axes[1].set_xlabel("Amount_Log")
+    axes[1].set_ylabel("Количество")
+    plt.tight_layout()
+    plt.savefig(paths["plots"] / "04_amount_log_normalization.png", dpi=150)
+    plt.close("all")
 
     plt.figure(figsize=(7, 5))
     df.boxplot(column="Amount", by="Class")
@@ -197,11 +258,15 @@ def run_pipeline(input_path: str, output_path: str) -> None:
     plt.xlabel("Class: 0 — обычная, 1 — мошенническая")
     plt.ylabel("Amount")
     plt.tight_layout()
-    plt.savefig(paths["plots"] / "03_amount_boxplot_by_class.png", dpi=150)
+    plt.savefig(paths["plots"] / "05_amount_boxplot_by_class.png", dpi=150)
     plt.close("all")
 
     df_eda = df.copy()
     df_eda["Hour"] = (df_eda["Time"] // 3600) % 24
+
+    # Абсолютное распределение по часам.
+    # Оно показывает общее количество операций, но из-за дисбаланса классов
+    # мошеннические операции могут быть визуально почти незаметны.
     plt.figure(figsize=(8, 5))
     plt.hist(df_eda[df_eda["Class"] == 0]["Hour"], bins=24, alpha=0.7, label="Обычные")
     plt.hist(df_eda[df_eda["Class"] == 1]["Hour"], bins=24, alpha=0.7, label="Мошеннические")
@@ -210,7 +275,46 @@ def run_pipeline(input_path: str, output_path: str) -> None:
     plt.ylabel("Количество операций")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(paths["plots"] / "04_time_distribution_by_hour.png", dpi=150)
+    plt.savefig(paths["plots"] / "06_time_distribution_by_hour.png", dpi=150)
+    plt.close()
+
+    # Нормализованное распределение по часам.
+    # Для каждого класса сумма значений по 24 часам равна 100%.
+    # Это позволяет сравнивать форму распределения обычных и мошеннических операций,
+    # а не абсолютные количества, которые сильно различаются из-за дисбаланса.
+    hour_class_counts = (
+        df_eda.groupby(["Hour", "Class"])
+        .size()
+        .unstack(fill_value=0)
+        .reindex(range(24), fill_value=0)
+    )
+    for class_value in [0, 1]:
+        if class_value not in hour_class_counts.columns:
+            hour_class_counts[class_value] = 0
+    hour_class_counts = hour_class_counts[[0, 1]]
+    hour_class_percent = hour_class_counts.div(hour_class_counts.sum(axis=0), axis=1).fillna(0) * 100
+    hour_class_percent.columns = ["Обычные операции, %", "Мошеннические операции, %"]
+    hour_class_percent.index.name = "Hour"
+    hour_class_percent.to_csv(paths["tables"] / "hour_distribution_normalized.csv", encoding="utf-8-sig")
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(hour_class_percent.index, hour_class_percent["Обычные операции, %"], marker="o", label="Обычные операции")
+    plt.plot(hour_class_percent.index, hour_class_percent["Мошеннические операции, %"], marker="o", label="Мошеннические операции")
+    plt.title("Нормализованное распределение операций по часам")
+    plt.xlabel("Час")
+    plt.ylabel("Доля операций внутри класса, %")
+    plt.xticks(range(24))
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(paths["plots"] / "06b_time_distribution_normalized.png", dpi=150)
+    plt.close()
+
+    plt.figure(figsize=(12, 10))
+    sns.heatmap(corr_matrix, cmap="coolwarm", center=0)
+    plt.title("Матрица корреляций")
+    plt.tight_layout()
+    plt.savefig(paths["plots"] / "07_full_correlation_heatmap.png", dpi=150)
     plt.close()
 
     plt.figure(figsize=(8, 10))
@@ -218,11 +322,13 @@ def run_pipeline(input_path: str, output_path: str) -> None:
     plt.title("Корреляция признаков с Class")
     plt.xlabel("Коэффициент корреляции")
     plt.tight_layout()
-    plt.savefig(paths["plots"] / "05_correlation_with_class.png", dpi=150)
+    plt.savefig(paths["plots"] / "08_correlation_with_class.png", dpi=150)
     plt.close()
 
     # 3. Подготовка данных
-    X = df.drop(columns=["Class"])
+    # Для обучения используем Amount_Log вместо исходного Amount.
+    # Это снижает влияние редких экстремально крупных операций.
+    X = df.drop(columns=["Class", "Amount"])
     y = df["Class"]
 
     X_train, X_test, y_train, y_test = train_test_split(
@@ -232,7 +338,7 @@ def run_pipeline(input_path: str, output_path: str) -> None:
     scaler = StandardScaler()
     X_train_scaled = X_train.copy()
     X_test_scaled = X_test.copy()
-    columns_to_scale = [col for col in ["Time", "Amount"] if col in X_train_scaled.columns]
+    columns_to_scale = [col for col in ["Time", "Amount_Log"] if col in X_train_scaled.columns]
     X_train_scaled[columns_to_scale] = scaler.fit_transform(X_train[columns_to_scale])
     X_test_scaled[columns_to_scale] = scaler.transform(X_test[columns_to_scale])
 
@@ -274,7 +380,7 @@ def run_pipeline(input_path: str, output_path: str) -> None:
     plt.xticks(rotation=0)
     plt.legend(loc="lower right")
     plt.tight_layout()
-    plt.savefig(paths["plots"] / "06_model_comparison.png", dpi=150)
+    plt.savefig(paths["plots"] / "09_model_comparison.png", dpi=150)
     plt.close()
 
     plt.figure(figsize=(8, 6))
@@ -283,7 +389,7 @@ def run_pipeline(input_path: str, output_path: str) -> None:
         RocCurveDisplay.from_estimator(model, X_test_scaled, y_test, name=name, ax=ax)
     plt.title("ROC-кривые моделей")
     plt.tight_layout()
-    plt.savefig(paths["plots"] / "07_roc_curves.png", dpi=150)
+    plt.savefig(paths["plots"] / "10_roc_curves.png", dpi=150)
     plt.close()
 
     plt.figure(figsize=(8, 6))
@@ -292,7 +398,7 @@ def run_pipeline(input_path: str, output_path: str) -> None:
         PrecisionRecallDisplay.from_estimator(model, X_test_scaled, y_test, name=name, ax=ax)
     plt.title("Precision-Recall-кривые моделей")
     plt.tight_layout()
-    plt.savefig(paths["plots"] / "08_precision_recall_curves.png", dpi=150)
+    plt.savefig(paths["plots"] / "11_precision_recall_curves.png", dpi=150)
     plt.close()
 
     # Важность признаков и дерево
@@ -308,7 +414,7 @@ def run_pipeline(input_path: str, output_path: str) -> None:
     plt.title("Топ-15 важных признаков Random Forest")
     plt.xlabel("Важность")
     plt.tight_layout()
-    plt.savefig(paths["plots"] / "09_feature_importance.png", dpi=150)
+    plt.savefig(paths["plots"] / "12_feature_importance.png", dpi=150)
     plt.close()
 
     plt.figure(figsize=(20, 8))
@@ -322,7 +428,7 @@ def run_pipeline(input_path: str, output_path: str) -> None:
     )
     plt.title("Визуализация дерева решений")
     plt.tight_layout()
-    plt.savefig(paths["plots"] / "10_decision_tree.png", dpi=150)
+    plt.savefig(paths["plots"] / "13_decision_tree.png", dpi=150)
     plt.close()
 
     best_model_name = choose_best_model(results)
@@ -361,6 +467,8 @@ def run_pipeline(input_path: str, output_path: str) -> None:
 Мошеннических операций: {fraud_count:,}.
 Доля мошеннических операций: {pct(fraud_share)}.
 
+Также добавлен признак Amount_Log = log(1 + Amount), который используется вместо исходного Amount при обучении моделей.
+
 Главный вывод: датасет сильно несбалансирован. Мошеннических операций очень мало по сравнению с обычными. Поэтому нельзя оценивать качество модели только по Accuracy: модель может почти всегда отвечать «обычная операция» и формально получать высокую точность, но не решать задачу антифрода.
 """
 
@@ -375,13 +483,21 @@ def run_pipeline(input_path: str, output_path: str) -> None:
 3. Распределение Class
 Мошеннические операции составляют только {pct(fraud_share)}. Это типичная ситуация для антифрод-задач: редкие события нужно находить среди огромного количества нормальных операций.
 
-4. Amount
-Сумма операции сама по себе не позволяет надежно отделить мошенничество от обычных операций. Мошеннические операции могут встречаться как среди маленьких, так и среди крупных сумм.
+4. Распределения числовых признаков
+Построены гистограммы всех числовых признаков. Они помогают увидеть асимметрию, выбросы и общий характер распределений. Большинство V-признаков уже преобразованы PCA, а Amount имеет заметно скошенное распределение.
 
-5. Time
-Признак Time помогает проверить, есть ли временные закономерности. Если подозрительные операции чаще встречаются в определенные часы, модель может использовать эту информацию.
+5. Amount и логарифмическая нормализация
+Сумма операции сама по себе не позволяет надежно отделить мошенничество от обычных операций. Мошеннические операции могут встречаться как среди маленьких, так и среди крупных сумм. Для Amount выполнено преобразование Amount_Log = log(1 + Amount). Оно уменьшает влияние очень крупных операций и делает распределение более удобным для обучения моделей.
 
-6. Корреляции
+6. Time и нормализация распределения по часам
+Признак Time помогает проверить, есть ли временные закономерности. Сначала построено абсолютное распределение операций по часам. Затем построено нормализованное распределение: для каждого класса сумма долей по 24 часам равна 100%.
+
+Это важно, потому что обычных операций намного больше, чем мошеннических. Нормализация позволяет сравнивать не количество операций, а форму распределения: в какие часы внутри каждого класса операции встречаются чаще или реже. Если линия мошеннических операций заметно отличается от линии обычных, значит время может быть полезным признаком для модели.
+
+7. Матрица корреляций
+Построена полная матрица корреляций между числовыми признаками. Она показывает, насколько признаки линейно связаны друг с другом. Для признаков после PCA обычно ожидается сниженная взаимная корреляция, что полезно для моделей.
+
+8. Корреляции с Class
 Самые положительно связанные с Class признаки:
 {top_corr_pos.to_string()}
 
@@ -406,8 +522,11 @@ Test: {X_test.shape[0]:,} строк.
 Доля fraud в train: {pct(float(y_train.mean()))}.
 Доля fraud в test: {pct(float(y_test.mean()))}.
 
-3. Масштабирование
-Признаки Time и Amount были стандартизированы через StandardScaler. Это особенно важно для Logistic Regression, потому что линейные модели чувствительны к масштабу признаков.
+3. Логарифмическая нормализация Amount
+Исходный признак Amount был заменен на Amount_Log = log(1 + Amount). Это уменьшает влияние редких экстремально крупных операций и делает распределение суммы более сглаженным.
+
+4. Масштабирование
+Признаки Time и Amount_Log были стандартизированы через StandardScaler. Это особенно важно для Logistic Regression, потому что линейные модели чувствительны к масштабу признаков.
 """
 
     rows_explanation = "\n".join(["- " + explain_metric_row(row) for _, row in results.iterrows()])
@@ -454,10 +573,12 @@ Random Forest позволяет оценить, какие признаки ч�
 1. загружен датасет Credit Card Fraud Detection;
 2. проведен EDA;
 3. выполнена очистка данных;
-4. выполнено масштабирование Time и Amount;
-5. обучены Logistic Regression, Decision Tree и Random Forest;
-6. модели сравнены по Precision, Recall, F1-score и ROC-AUC;
-7. сохранены графики, таблицы и предсказания.
+4. выполнена логарифмическая нормализация Amount;
+5. построено нормализованное распределение операций по часам;
+6. выполнено масштабирование Time и Amount_Log;
+6. обучены Logistic Regression, Decision Tree и Random Forest;
+7. модели сравнены по Precision, Recall, F1-score и ROC-AUC;
+8. сохранены графики, таблицы и предсказания.
 
 Главная особенность данных — сильный дисбаланс классов: мошеннических операций всего {pct(fraud_share)}.
 Из-за этого Accuracy не является главной метрикой. Основной акцент нужно делать на Recall, Precision, F1-score и Precision-Recall-кривой.
@@ -487,7 +608,9 @@ Random Forest позволяет оценить, какие признаки ч�
         "train_rows": int(X_train.shape[0]),
         "test_rows": int(X_test.shape[0]),
         "best_model": best_model_name,
-        "output_dir": str(output_dir.resolve()),
+        "output_base_dir": str(output_dir.resolve()),
+        "run_dir": str(paths["root"].resolve()),
+        "plots_dir": str(paths["plots"].resolve()),
     }
     save_json(paths["root"] / "summary.json", summary)
 
@@ -495,7 +618,8 @@ Random Forest позволяет оценить, какие признаки ч�
     print(f"Лучшая модель: {best_model_name}", flush=True)
     print(f"Отчет: {paths['root'] / 'human_readable_report.txt'}", flush=True)
     print(f"Таблица сравнения моделей: {paths['tables'] / 'model_comparison.csv'}", flush=True)
-    print(f"Графики: {paths['plots']}", flush=True)
+    print(f"Папка текущего запуска: {paths['root']}", flush=True)
+    print(f"Графики текущего запуска: {paths['plots']}", flush=True)
 
 
 if __name__ == "__main__":

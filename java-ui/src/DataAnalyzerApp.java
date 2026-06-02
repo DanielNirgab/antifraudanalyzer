@@ -24,10 +24,19 @@ public class DataAnalyzerApp extends JFrame {
     private JTable tblModels;
     private JTable tblPredictions;
     private JLabel lblGraph;
+    private JLabel lblHistograms;
+    private JLabel lblCorrelationMatrix;
+    private JLabel lblLogNormalization;
+    private JLabel lblHourNormalization;
     private JComboBox<String> cmbGraphs;
 
     private File selectedCsvFile;
+    // outputDir — базовая папка всех запусков.
+    // currentRunDir — папка конкретного последнего запуска: output/runs/run_YYYYMMDD_HHMMSS.
     private File outputDir = new File("output");
+    private File currentRunDir = null;
+    private File detectedRunDirFromPython = null;
+    private File projectRootDir = new File(".").getAbsoluteFile();
 
     public DataAnalyzerApp() {
         setTitle("Учебный проект: определение мошеннических банковских операций");
@@ -95,6 +104,18 @@ public class DataAnalyzerApp extends JFrame {
         tabs.addTab("Подготовка", new JScrollPane(txtPreprocessing));
         tabs.addTab("Модели", new JScrollPane(txtModels));
 
+        lblHistograms = createImageLabel("Гистограммы всех числовых признаков появятся после анализа");
+        tabs.addTab("Распределения", new JScrollPane(lblHistograms));
+
+        lblLogNormalization = createImageLabel("График логарифмической нормализации Amount появится после анализа");
+        tabs.addTab("Лог-нормализация", new JScrollPane(lblLogNormalization));
+
+        lblHourNormalization = createImageLabel("Нормализованное распределение операций по часам появится после анализа");
+        tabs.addTab("Часы, нормализация", new JScrollPane(lblHourNormalization));
+
+        lblCorrelationMatrix = createImageLabel("Матрица корреляций появится после анализа");
+        tabs.addTab("Корреляции", new JScrollPane(lblCorrelationMatrix));
+
         tblModels = new JTable();
         tabs.addTab("Сравнение моделей", new JScrollPane(tblModels));
 
@@ -129,6 +150,12 @@ public class DataAnalyzerApp extends JFrame {
         area.setFont(new Font("Segoe UI", Font.PLAIN, 15));
         area.setText("Результаты появятся после запуска анализа.");
         return area;
+    }
+
+    private JLabel createImageLabel(String text) {
+        JLabel label = new JLabel(text, SwingConstants.CENTER);
+        label.setBorder(BorderFactory.createEtchedBorder());
+        return label;
     }
 
     private String getCurrentPythonPath() {
@@ -191,12 +218,15 @@ public class DataAnalyzerApp extends JFrame {
             return;
         }
 
-        outputDir = new File("output").getAbsoluteFile();
+        projectRootDir = script.getParentFile().getParentFile().getAbsoluteFile();
+        outputDir = new File(projectRootDir, "output").getAbsoluteFile();
+        detectedRunDirFromPython = null;
         clearResultsBeforeRun();
         appendConsole("Запуск анализа...");
         appendConsole("Python-скрипт: " + script.getAbsolutePath());
         appendConsole("Датасет: " + selectedCsvFile.getAbsolutePath());
-        appendConsole("Папка результатов: " + outputDir.getAbsolutePath());
+        appendConsole("Базовая папка результатов: " + outputDir.getAbsolutePath());
+        appendConsole("Для каждого запуска Python создаст отдельную папку: output/runs/run_YYYYMMDD_HHMMSS");
 
         new Thread(() -> executePythonScript(script)).start();
     }
@@ -212,13 +242,17 @@ public class DataAnalyzerApp extends JFrame {
             command.add(outputDir.getAbsolutePath());
 
             ProcessBuilder pb = new ProcessBuilder(command);
+            pb.directory(projectRootDir);
             pb.redirectErrorStream(true);
             Process process = pb.start();
 
-            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), "UTF-8"));
             String line;
             while ((line = reader.readLine()) != null) {
                 String text = line;
+                if (text.startsWith("RUN_DIR=")) {
+                    detectedRunDirFromPython = new File(text.substring("RUN_DIR=".length()).trim());
+                }
                 SwingUtilities.invokeLater(() -> appendConsole(text));
             }
 
@@ -241,16 +275,56 @@ public class DataAnalyzerApp extends JFrame {
     }
 
     private void loadResultsFromOutput() {
-        txtOverview.setText(readText(new File(outputDir, "texts/01_summary.txt")));
-        txtEda.setText(readText(new File(outputDir, "texts/02_eda_interpretation.txt")));
-        txtPreprocessing.setText(readText(new File(outputDir, "texts/03_preprocessing.txt")));
-        txtModels.setText(readText(new File(outputDir, "texts/04_models_interpretation.txt")));
-        txtFeatures.setText(readText(new File(outputDir, "texts/05_feature_importance.txt")));
-        txtFinal.setText(readText(new File(outputDir, "texts/06_final_conclusion.txt")));
+        currentRunDir = null;
+        if (detectedRunDirFromPython != null && detectedRunDirFromPython.exists() && detectedRunDirFromPython.isDirectory()) {
+            currentRunDir = detectedRunDirFromPython.getAbsoluteFile();
+        }
+        if (currentRunDir == null) {
+            currentRunDir = detectLatestRunDir();
+        }
+        if (currentRunDir == null || !currentRunDir.exists()) {
+            appendConsole("Не удалось определить папку текущего запуска. Проверьте файл output/latest_run.txt.");
+            currentRunDir = outputDir;
+        }
 
-        loadCsvToTable(new File(outputDir, "tables/model_comparison.csv"), tblModels, 200);
-        loadCsvToTable(new File(outputDir, "tables/fraud_predictions.csv"), tblPredictions, 100);
+        appendConsole("Загрузка результатов из папки текущего запуска: " + currentRunDir.getAbsolutePath());
+
+        appendConsole("Проверяю папку texts: " + new File(currentRunDir, "texts").getAbsolutePath());
+        appendConsole("Проверяю папку tables: " + new File(currentRunDir, "tables").getAbsolutePath());
+        appendConsole("Проверяю папку plots: " + new File(currentRunDir, "plots").getAbsolutePath());
+
+        txtOverview.setText(readText(new File(currentRunDir, "texts/01_summary.txt")));
+        txtEda.setText(readText(new File(currentRunDir, "texts/02_eda_interpretation.txt")));
+        txtPreprocessing.setText(readText(new File(currentRunDir, "texts/03_preprocessing.txt")));
+        txtModels.setText(readText(new File(currentRunDir, "texts/04_models_interpretation.txt")));
+        txtFeatures.setText(readText(new File(currentRunDir, "texts/05_feature_importance.txt")));
+        txtFinal.setText(readText(new File(currentRunDir, "texts/06_final_conclusion.txt")));
+
+        showImageInLabel(lblHistograms, new File(currentRunDir, "plots/02_all_numeric_histograms.png"), 1000, 620);
+        showImageInLabel(lblLogNormalization, new File(currentRunDir, "plots/04_amount_log_normalization.png"), 1000, 620);
+        showImageInLabel(lblHourNormalization, new File(currentRunDir, "plots/06b_time_distribution_normalized.png"), 1000, 620);
+        showImageInLabel(lblCorrelationMatrix, new File(currentRunDir, "plots/07_full_correlation_heatmap.png"), 1000, 620);
+
+        loadCsvToTable(new File(currentRunDir, "tables/model_comparison.csv"), tblModels, 200);
+        loadCsvToTable(new File(currentRunDir, "tables/fraud_predictions.csv"), tblPredictions, 100);
         loadGraphs();
+    }
+
+    private File detectLatestRunDir() {
+        File latestFile = new File(outputDir, "latest_run.txt");
+        if (latestFile.exists()) {
+            String path = readText(latestFile).trim();
+            if (!path.isEmpty()) {
+                File f = new File(path);
+                if (f.exists() && f.isDirectory()) return f.getAbsoluteFile();
+            }
+        }
+
+        File runsDir = new File(outputDir, "runs");
+        File[] runs = runsDir.listFiles(File::isDirectory);
+        if (runs == null || runs.length == 0) return null;
+        java.util.Arrays.sort(runs, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+        return runs[0].getAbsoluteFile();
     }
 
     private void clearResultsBeforeRun() {
@@ -265,6 +339,10 @@ public class DataAnalyzerApp extends JFrame {
         cmbGraphs.removeAllItems();
         lblGraph.setIcon(null);
         lblGraph.setText("Графики появятся после анализа");
+        if (lblHistograms != null) { lblHistograms.setIcon(null); lblHistograms.setText("Гистограммы всех числовых признаков появятся после анализа"); }
+        if (lblLogNormalization != null) { lblLogNormalization.setIcon(null); lblLogNormalization.setText("График логарифмической нормализации Amount появится после анализа"); }
+        if (lblHourNormalization != null) { lblHourNormalization.setIcon(null); lblHourNormalization.setText("Нормализованное распределение операций по часам появится после анализа"); }
+        if (lblCorrelationMatrix != null) { lblCorrelationMatrix.setIcon(null); lblCorrelationMatrix.setText("Матрица корреляций появится после анализа"); }
     }
 
     private File findPythonScript() {
@@ -284,7 +362,7 @@ public class DataAnalyzerApp extends JFrame {
     private String readText(File file) {
         try {
             if (!file.exists()) return "Файл результата не найден: " + file.getAbsolutePath();
-            return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            return new String(Files.readAllBytes(file.toPath()), "UTF-8");
         } catch (IOException ex) {
             return "Ошибка чтения файла: " + ex.getMessage();
         }
@@ -296,7 +374,7 @@ public class DataAnalyzerApp extends JFrame {
             return;
         }
 
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(csvFile), StandardCharsets.UTF_8))) {
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(csvFile), "UTF-8"))) {
             String headerLine = br.readLine();
             if (headerLine == null) return;
             headerLine = removeBom(headerLine);
@@ -322,12 +400,17 @@ public class DataAnalyzerApp extends JFrame {
 
     private void loadGraphs() {
         cmbGraphs.removeAllItems();
-        File plotsDir = new File(outputDir, "plots");
-        File[] files = plotsDir.listFiles((dir, name) -> name.toLowerCase().endsWith(".png"));
+        File base = currentRunDir != null ? currentRunDir : outputDir;
+        File plotsDir = new File(base, "plots");
+        File[] files = plotsDir.listFiles((dir, name) -> {
+            String lower = name.toLowerCase();
+            return lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg");
+        });
         if (files == null || files.length == 0) {
             lblGraph.setText("Графики не найдены.");
             return;
         }
+        java.util.Arrays.sort(files, (a, b) -> a.getName().compareToIgnoreCase(b.getName()));
         for (File f : files) cmbGraphs.addItem(f.getName());
         if (cmbGraphs.getItemCount() > 0) cmbGraphs.setSelectedIndex(0);
         showSelectedGraph();
@@ -335,28 +418,37 @@ public class DataAnalyzerApp extends JFrame {
 
     private void showSelectedGraph() {
         if (cmbGraphs.getSelectedItem() == null) return;
-        File imageFile = new File(new File(outputDir, "plots"), cmbGraphs.getSelectedItem().toString());
+        File base = currentRunDir != null ? currentRunDir : outputDir;
+        File imageFile = new File(new File(base, "plots"), cmbGraphs.getSelectedItem().toString());
         if (!imageFile.exists()) {
             lblGraph.setIcon(null);
             lblGraph.setText("Файл графика не найден: " + imageFile.getAbsolutePath());
             return;
         }
+        showImageInLabel(lblGraph, imageFile, 950, 560);
+    }
+
+    private void showImageInLabel(JLabel label, File imageFile, int maxW, int maxH) {
+        if (!imageFile.exists()) {
+            label.setIcon(null);
+            label.setText("Файл графика не найден: " + imageFile.getAbsolutePath());
+            return;
+        }
         ImageIcon icon = new ImageIcon(imageFile.getAbsolutePath());
-        int maxW = 950;
-        int maxH = 560;
         int w = icon.getIconWidth();
         int h = icon.getIconHeight();
         double scale = Math.min((double) maxW / Math.max(w, 1), (double) maxH / Math.max(h, 1));
         if (scale > 1.0) scale = 1.0;
         Image scaled = icon.getImage().getScaledInstance((int) (w * scale), (int) (h * scale), Image.SCALE_SMOOTH);
-        lblGraph.setIcon(new ImageIcon(scaled));
-        lblGraph.setText("");
+        label.setIcon(new ImageIcon(scaled));
+        label.setText("");
     }
 
     private void openOutputFolder() {
         try {
-            if (!outputDir.exists()) outputDir.mkdirs();
-            Desktop.getDesktop().open(outputDir);
+            File folderToOpen = currentRunDir != null && currentRunDir.exists() ? currentRunDir : outputDir;
+            if (!folderToOpen.exists()) folderToOpen.mkdirs();
+            Desktop.getDesktop().open(folderToOpen);
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "Не удалось открыть папку: " + ex.getMessage(), "Ошибка", JOptionPane.ERROR_MESSAGE);
         }
@@ -368,7 +460,7 @@ public class DataAnalyzerApp extends JFrame {
     }
 
     private String readProcessOutput(Process process) throws IOException {
-        BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+        BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), "UTF-8"));
         StringBuilder sb = new StringBuilder();
         String line;
         while ((line = reader.readLine()) != null) sb.append(line).append("\n");
@@ -381,7 +473,7 @@ public class DataAnalyzerApp extends JFrame {
 
         try {
             Process p = Runtime.getRuntime().exec(new String[]{"where", "python"});
-            BufferedReader in = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
+            BufferedReader in = new BufferedReader(new InputStreamReader(p.getInputStream(), "UTF-8"));
             String line;
             while ((line = in.readLine()) != null) {
                 if (!line.trim().isEmpty() && !pythonPaths.contains(line.trim())) pythonPaths.add(line.trim());
