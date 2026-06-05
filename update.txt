@@ -1,0 +1,1 @@
+pip install --upgrade numpy pandas matplotlib seaborn scikit-learn
