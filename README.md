@@ -57,7 +57,10 @@ output/runs/run_YYYYMMDD_HHMMSS/plots/
 ```bash
 pip install -r requirements.txt
 ```
-
+Желательно провести обновление библиотек
+```bash
+pip install -r update.txt
+```
 ## Ручной запуск Python
 
 ```bash
@@ -69,7 +72,7 @@ python python/antifraud_pipeline.py --input путь_к_creditcard.csv --output 
 Из корня проекта:
 
 ```bash
-javac java-ui/src/DataAnalyzerApp.java
+javac java-ui/src/DataAnalyzerApp.java //При отсутсвии файла или использовании старой версии JDK
 java -cp java-ui/src DataAnalyzerApp
 ```
 
