@@ -1,5 +1,5 @@
 # Учебный проект: определение мошеннических банковских операций
-
+## Примечание: часть программного кода и отдельных решений в данном проекте была разработана с использованием инструментов Live Coding и AI-ассистентов. Все материалы были проверены, адаптированы и интегрированы
 Проект состоит из двух частей:
 
 - `python/antifraud_pipeline.py` — Python-скрипт анализа датасета Credit Card Fraud Detection;
@@ -104,3 +104,4 @@ plots/confusion_matrix_logistic_regression.png
 plots/confusion_matrix_decision_tree.png
 plots/confusion_matrix_random_forest.png
 ```
+
